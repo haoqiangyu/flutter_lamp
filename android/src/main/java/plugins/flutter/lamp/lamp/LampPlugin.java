@@ -1,7 +1,12 @@
 package plugins.flutter.lamp.lamp;
 
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.hardware.Camera;
+import android.hardware.camera2.CameraAccessException;
+import android.hardware.camera2.CameraManager;
+import android.os.Build;
+import android.util.Log;
 
 import io.flutter.plugin.common.MethodChannel;
 import io.flutter.plugin.common.MethodChannel.MethodCallHandler;
@@ -16,7 +21,6 @@ public class LampPlugin implements MethodCallHandler {
 
     private LampPlugin(Registrar registrar) {
         this._registrar = registrar;
-        this._camera = this.getCamera();
     }
 
     public static void registerWith(Registrar registrar) {
@@ -24,7 +28,6 @@ public class LampPlugin implements MethodCallHandler {
         channel.setMethodCallHandler(new LampPlugin(registrar));
     }
 
-    private Camera _camera;
     private Registrar _registrar;
 
     @Override
@@ -56,17 +59,10 @@ public class LampPlugin implements MethodCallHandler {
     }
 
     private void turn(boolean on) {
-        Camera.Parameters params;
-        if (_camera == null || !hasLamp()) {
-            return;
-        }
-        params = _camera.getParameters();
-        params.setFlashMode(on ? Camera.Parameters.FLASH_MODE_TORCH : Camera.Parameters.FLASH_MODE_OFF);
-        _camera.setParameters(params);
         if (on) {
-            _camera.startPreview();
+            turnFlashlightOn();
         } else {
-            _camera.stopPreview();
+            turnFlashlightOff();
         }
     }
 
@@ -74,4 +70,51 @@ public class LampPlugin implements MethodCallHandler {
         return _registrar.context().getApplicationContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH);
     }
 
+
+    private static final String TAG = "FlashlightProvider";
+    private Camera mCamera;
+    private Camera.Parameters parameters;
+    private CameraManager camManager;
+
+    private void turnFlashlightOn() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                camManager = (CameraManager) _registrar.context().getSystemService(Context.CAMERA_SERVICE);
+                String cameraId = null; // Usually front camera is at 0 position.
+                if (camManager != null) {
+                    cameraId = camManager.getCameraIdList()[0];
+                    camManager.setTorchMode(cameraId, true);
+                }
+            } catch (CameraAccessException e) {
+                Log.e(TAG, e.toString());
+            }
+        } else {
+            mCamera = Camera.open();
+            parameters = mCamera.getParameters();
+            parameters.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
+            mCamera.setParameters(parameters);
+            mCamera.startPreview();
+        }
+    }
+
+    private void turnFlashlightOff() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            try {
+                String cameraId;
+                camManager = (CameraManager) _registrar.context().getSystemService(Context.CAMERA_SERVICE);
+                if (camManager != null) {
+                    cameraId = camManager.getCameraIdList()[0]; // Usually front camera is at 0 position.
+                    camManager.setTorchMode(cameraId, false);
+                }
+            } catch (CameraAccessException e) {
+                e.printStackTrace();
+            }
+        } else {
+            mCamera = Camera.open();
+            parameters = mCamera.getParameters();
+            parameters.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+            mCamera.setParameters(parameters);
+            mCamera.stopPreview();
+        }
+    }
 }
